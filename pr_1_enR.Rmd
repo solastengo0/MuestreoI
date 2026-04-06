@@ -1,0 +1,334 @@
+---
+title: "Pr_1enR"
+output: html_document
+date: "2024-04-03"
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\newpage
+
+En primer lugar, como por momento estaremos haciendo simulaciones y
+extrayendo muestras debemos fijar una semilla para que los resultados
+sean reproducibles, además cargamos las librerías con las que
+trabajamos.
+
+```{r, warning=FALSE, message=FALSE}
+set.seed(130324)
+library(tidyverse)  #para graficos y trabajar en formato dplyr
+library(gtools)   #combinaciones y arreglos
+library(readxl)   #cargar datos
+
+```
+
+# Ejercicio 5
+
+Sea la población del **ejercicio 4**, tal que la variable de interés
+***y*** toma los valores $1,2,4,4,7,7,7,8$ para los individuos
+identificados con los índices del 1 al 8.
+
+```{r}
+ids <- 1:8
+y <- c(1,2,4,4,7,7,7,8)
+
+Pobl <-as.data.frame(cbind(ids,y))
+```
+
+## Sin Repetición
+
+Obtener la distribución de muestreo de la estimación del total población
+$\hat{Y} = N\times \bar{y}$ en un muestreo aleatorio simple sin
+reposición de tamaño 3.
+
+Obtener la distribución de muestreo es encontrar es todos los valores
+posibles de la estimación del total poblacional, y dado que es una
+variable aleatoria asignarle a cada valor su correspondiente
+probabilidad.
+
+Seguiremos dos caminos distintos, en primer lugar haremos simulaciones
+en la obtención de la muestra, y en segundo lugar obtendremos todas las
+muestras posibles.
+
+### Simulaciones
+
+Vamos a fijar un número de simulaciones, por ejemplo `sims=10000`, y
+vamos a extraer $1000$ veces una muestra sin reposición y estimar el
+total
+
+```{r}
+
+N=nrow(Pobl)  #tamaño de la población
+n=3 #tamaño de la muestra
+
+sims=10000  #cantidad de simulaciones
+estY=rep(0,sims)  #vector de 0's donde pondremos las estimaciones del total poblacional en cada simulación
+
+for (i in 1:sims) {
+  muestra=sample(y,n,replace=FALSE)  #extracción de la muestra sin repetición
+  ybarra=mean(muestra)  #media muestral en cada simulación
+  estY[i]=ybarra*N   #estimacion del total
+}
+
+estY = sort(estY, decreasing = FALSE)  #ordenamos de menor a mayor
+
+dist = as.data.frame(estY)
+
+# calculamos la probabilidad de selección de cada estimación (hay valores repetidos)
+dist <- dist %>% mutate(
+  f = 1/sims
+)
+
+
+# agrupamos los valores repetidos y sumamos sus probabilidades
+f_dist <- dist %>% group_by(estY) %>% 
+  summarise(
+    f_Y = sum(f)
+  )
+
+# calculamos la probabilidad acumulada
+f_dist <- f_dist %>% mutate(
+  F_Y= cumsum(f_Y)
+)
+
+f_dist
+
+#V_sr=var(estY)
+```
+
+Podemos ver el histograma de distribución en el muestreo de $\hat{Y}$, y
+la línea roja marca cuál es el total poblacional.
+
+```{r}
+Y=sum(Pobl$y)  # calculamos el total poblacional
+
+ggplot(f_dist, aes(x=estY,y=f_Y)) + geom_col() + geom_vline(xintercept = Y, color="red") + theme_bw()
+
+```
+
+### Teóricamente
+
+Para hallar la distribución teórica de $\hat{Y}$ debemos extraer todas
+las muestras posibles de tamaño 3 sin repetición de la población
+origina, es decir, nuestra cantidad de muestras es $C_n^N$, y se
+calcula:
+
+$$
+C_n^N = \frac{N!}{(N-n)!\cdot n!} = \frac{8!}{5!3!} = 56
+$$ Observando que a nosotros no nos interesa el órden, por lo que dos
+muestas que tengan los mismos 3 elementos pero en distinto órden serán
+completamente iguales.
+
+```{r}
+muestras = combinations(n=8,r=3)  #cada fila es una muestra de tamaño 3 sin reposición, contiene todas las muestas posibles
+muestras = as.data.frame(muestras)
+colnames(muestras) <- c("ind1","ind2","ind3")
+
+# el data.frame muestra contiene una fila por cada muestra posible, y en sus columnas los individuos que pertenecen a esa muestra
+
+m=nrow(muestras)   #m=56
+
+# obtenemos de la población, los valores de la variable y para cada individuo de cada muestra
+muestras <- muestras %>% mutate(
+  y_1 = Pobl[as.character(ind1),2],
+  y_2 = Pobl[as.character(ind2),2],
+  y_3 = Pobl[as.character(ind3),2]
+)
+
+
+# calculamos media muestral de cada muestra y estimamos el total
+muestras <- muestras %>% rowwise %>% #rowwise para poder aplicar mean a cada fila
+  mutate(
+    ybarra=mean(c(y_1,y_2,y_3)),
+    estY = N*ybarra)
+
+
+# En el objeto muestras, para cada muestra posible tenemos los valores de y, la media muestral y la estimacion del total
+
+# ahora calcularemos la distribucion teórica
+distT <- sort(muestras$estY)
+distT <- as.data.frame(distT)
+colnames(distT) <- c("estimacion_total")
+
+distT <- distT %>% mutate(
+  f_Y = 1/m
+)
+
+f_distT <- distT %>% group_by(estimacion_total) %>% 
+  summarise(
+    f_Y = round(sum(f_Y),3)
+  )
+
+f_distT <- f_distT %>% mutate(
+  F_Y = round(cumsum(f_Y),3)
+)
+
+f_distT
+```
+
+```{r}
+ggplot(f_distT, aes(x=estimacion_total,y=f_Y)) + geom_col() + geom_vline(xintercept = Y, color="red") + theme_bw()
+```
+
+## Con Repetición
+
+Repetiremos el proceso anterior, primero estimaremos la distribución del
+muestreo con repetición mediante simulaciones y luego la calcularemos
+para todas las muestras posibles.
+
+### Simulaciones
+
+```{r}
+estYR=rep(0,sims)
+id=seq(1:8)
+
+for (i in 1:sims) {
+  muestra=sample(id,n,replace=TRUE)
+  muestra=unique(muestra)
+  muestra=y[muestra]
+  pi_k=1-7^3/8^3
+  estYR[i]=(1/pi_k)*sum(muestra)
+}
+
+estYR = sort(estYR, decreasing = FALSE)
+
+distR = as.data.frame(estYR)
+
+distR <- distR %>% mutate(
+  f_Y = 1/sims
+)
+
+f_distR <- distR %>% group_by(estYR) %>% summarise(
+  f_YR = sum(f_Y)
+)
+
+f_distR <- f_distR %>% mutate(
+  F_YR = cumsum(f_YR)
+)
+
+f_distR
+
+```
+
+```{r}
+ggplot(f_distR, aes(x=estYR,y=f_YR)) + geom_col() + geom_vline(xintercept = Y, color="red") + theme_bw()
+```
+
+
+## Comparación de las varianzas
+
+Ahora compararemos las varianzas de la distribución en el
+muestreo.
+
+Para el muestreo aleatorio simple sin reposición tenemos:
+
+
+
+
+```{r}
+V_sr=var(estY)
+
+V_sr
+```
+
+Para el muestreo aleatorio simple con reposición tenemos:
+
+```{r}
+V_cr=var(estYR)
+
+V_cr
+```
+
+# Ejercicio 6
+
+Se cuenta con una MUESTRA de tamaño $n=30$, y se sabe que proviene de
+una población de tamaño $N=100$ obtenida mediante un diseño simple
+
+```{r}
+y=c(8, 5, 2, 6, 6, 3, 8, 6, 10, 7, 15, 9, 15, 3, 5, 6, 7, 10, 14, 3, 4, 17, 10, 6, 14, 12, 7, 8, 12, 9)
+
+n=length(y)
+N=100
+
+y
+```
+
+¿Cuál es el ponderador para cada unidad de la muestra?
+
+Como es una diseño simple, la probabilidad de selección de cada
+individuo es:
+
+$$
+\pi_i = \frac{n}{N} = \frac{30}{100} = 0.3
+$$ Y el ponderador es el inverso de la probabilidad de selección
+
+$$
+d_k = \frac{1}{\pi_k} = \frac{1}{30/100}=\frac{100}{30}=3,33
+$$
+
+Es decir, cada individuo representa a 3,33 personas.
+
+```{r}
+pi_k=n/N
+dk=1/pi_k
+```
+
+El estimador Horvitz-Thompson del total poblacional
+
+$$
+\widehat{Y_{HT}} = \sum_s d_k  y_k
+$$
+
+```{r}
+Y_HT = sum(dk*y)
+Y_HT
+```
+
+Para calcular un intervalo de confianza al $95\%$ se asume una
+distribución normal de los datos, además es necesario calcular una
+estimación de la varianza del estimador. Que para un diseño simple se
+tiene:
+
+$$
+\widehat{\mathbb{V}(\widehat{Y_{HT}})}=N^2(1-f)\frac{S^2_y}{n}
+$$ Donde $f$ es la fracción de la población muestreada $f=n/N$, y
+$S^2_y$ es la varianza muestral de la variable $y$
+
+```{r}
+f=n/N
+est_V_Y = N^2*(1-f)*(var(y)/n)
+est_V_Y
+```
+
+Y el desvío es:
+
+$$
+\widehat{SE_s(y)} = \sqrt{\widehat{\mathbb{V}(\widehat{Y_{HT}})}}
+$$
+
+```{r}
+est_se_Y = sqrt(est_V_Y)
+```
+
+Y el intervalo de confianza al $95\%$ es:
+
+$$
+\begin{split}
+IC_{100(1-\alpha)\%} & =\left[\widehat{Y_{HT}}-Z_{1-\alpha/2}\cdot \widehat{SE_s}(\hat{Y}),\widehat{Y_{HT}}+Z_{1-\alpha/2}\cdot \widehat{SE_s}(\hat{Y})   \right]  \\
+IC_{95\%} & = \left[\widehat{Y_{HT}}-Z_{1-0.05/2}\cdot \widehat{SE_s}(\hat{Y}),\widehat{Y_{HT}}+Z_{1-0.05/2}\cdot \widehat{SE_s}(\hat{Y})    \right] \\
+IC_{95\%} & = \left[\widehat{Y_{HT}}-Z_{0.975}\cdot \widehat{SE_s}(\hat{Y}),\widehat{Y_{HT}}+Z_{0.975}\cdot \widehat{SE_s}(\hat{Y}) \right] \\
+IC_{95\%} & = \left[823,33-1,96\cdot 61,06,823,33+1,96\cdot 61,06 \right]
+\end{split}
+$$
+
+```{r}
+IC= c(Y_HT-qnorm(0.975)*est_se_Y,Y_HT+qnorm(0.975)*est_se_Y)
+IC
+```
+
+
+

@@ -1,0 +1,68 @@
+---
+title: "Ej13_14_p1"
+output: pdf_document
+date: "2026-04-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+empresas <- read_excel("frame empresas.xlsx")
+```
+
+## Ejercicio 13
+
+```{r}
+N <- nrow(empresas)
+y <- empresas$empleados
+```
+
+```{r}
+simular_totales <- function(n, sims = 1000) {
+  
+  estY <- rep(0, sims)
+  
+  for (i in 1:sims) {
+    muestra <- sample(y, size = n, replace = TRUE)
+    estY[i] <- N * mean(muestra)
+  }
+  
+  return(estY)
+}
+```
+
+Simulaciones de muestras de tamaños 30, 50, 100 y 200
+```{r}
+t30 <- simular_totales(30)
+t50 <- simular_totales(50)
+t100 <- simular_totales(100)
+t200 <- simular_totales(200)
+```
+
+Total poblacional real
+```{r}
+Y_real <- sum(y)
+```
+
+```{r}
+ggplot(data.frame(t30), aes(x = t30)) +
+  geom_histogram(bins = 30) +
+  geom_vline(xintercept = sum(y), color = "red", linewidth = 1) +
+  ggtitle("Distribución de t_hat (n = 30)") +
+  theme_bw()
+```
+```{r}
+ggplot(data.frame(t200), aes(x = t200)) +
+  geom_histogram(bins = 200) +
+  geom_vline(xintercept = sum(y), color = "red", linewidth = 1) +
+  ggtitle("Distribución de t_hat (n = 200)") +
+  theme_bw()
+```
+La distribución de $\hat{t}_π$ presenta asimetría positiva, reflejando la distribución de la variable empleados.
+Para n=200, la distribución es más concentrada y simétrica que para n=30, pero aún presenta cola derecha.
+Esto indica que la convergencia a la normal es lenta debido a la asimetría de la población.
+
+
