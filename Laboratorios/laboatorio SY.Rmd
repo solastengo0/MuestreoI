@@ -1,0 +1,178 @@
+---
+title: "Laboratorio III - Sistemático"
+author: "Muestreo y Planificación de Encuestas"
+date: '2024'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,warning = FALSE)
+```
+
+### Paquetes
+
+Carga los paquetes.
+
+```{r, warning=FALSE,message=FALSE}
+library(tidyverse)
+library(survey)
+library(srvyr)
+```
+
+### Importa universo de interés $U$
+
+```{r}
+U = readxl::read_xlsx('frame empresas.xlsx')
+```
+
+### Parámetros de interés
+
+El  parámetros de interés es:
+
+-   Total de empleados $Y=\sum\nolimits_{i\in U} y_i=$ `r  U %>%  pull(empleados) %>% sum(.)`
+
+### Diseño Sistemático
+Vamos a seleccionar una muestra bajo un diseño $p(s)$ sistemático de tamaño $n=300$
+
+
+Como primer paso definimos una variable con las probabilidades de inclusión $\pi_i=n/N\ \  \forall i \in U$
+
+```{r}
+n=300
+N=nrow(U)
+U = U %>% mutate(pi=n/N)
+```
+
+## Caso 1
+
+Ordenamos la población $U$ al azar
+
+```{r}
+set.seed(12)
+U = U %>% mutate(RN=runif(nrow(U),0,1)) %>% arrange(RN) %>% select(-RN)
+```
+
+Utilizamos el paquete `sampling` el cual permite seleccionar muestras bajo diseños muestrales complejos
+
+```{r}
+library(sampling)
+```
+
+Seleccionamos una muestra
+```{r}
+set.seed(1)
+incluidas= UPsystematic(U$pi)
+s= U %>%  filter(incluidas==1)  
+```
+
+Realizamos la estimación puntual del total de empleados
+```{r}
+sum(s$empleados/s$pi)
+```
+
+
+#### Simulación 
+
+Ahora, simulamos 10000 muestras para estimar el error estándar del estimador de forma empírica. Debería ser similar al MAS
+
+
+```{r}
+R=1000
+Y_HT_SY=as.numeric()
+```
+
+```{r}
+set.seed(12)
+for ( i in 1:R) {
+incluidas=UPsystematic(U$pi)
+Y_HT_SY[i]=U %>% filter(incluidas==1)  %>% summarise(sum(empleados/pi)) %>% pull()  
+}
+
+```
+
+Simulaciones:
+
+```{r}
+hist(Y_HT_SY,main="",xlab = "Estimador HT para del diseño SY con el orden aleatorio")
+```
+
+
+Calculamos el efecto de diseño
+```{r}
+VAR_SI=N^2*(1-n/N)*var(U$empleados)/n
+VAR_SY=var(Y_HT_SY)
+(deff=VAR_SY/VAR_SI)
+```
+
+## Caso 2
+
+Ahora, ordenamos el marco por una variable $x$ que se encuentre correlacinada con la variable de interés $y$. En este caso, ordenamos por la variable remuneraciones
+
+```{r}
+U %>% summarise(r=cor(empleados,rem))
+```
+
+
+
+```{r}
+U %>% ggplot()+geom_point(aes(x=rem,y=empleados)) + geom_smooth(aes(x=rem,y=empleados), method='lm')+
+  theme_bw()
+```
+
+```{r}
+R=1000
+U = U %>% arrange(rem)
+Y_HT_SY_1=as.numeric()
+```
+
+
+```{r}
+set.seed(12)
+for ( i in 1:R) {
+incluidas=UPsystematic(U$pi)
+Y_HT_SY_1[i]=U %>% filter(incluidas==1)  %>% summarise(sum(empleados/pi)) %>% pull()  
+}
+
+```
+
+Simulaciones 
+
+```{r}
+hist(Y_HT_SY_1,main="",xlab = "Estimador HT para del diseño SY con el orden según variable auxiliar")
+```
+
+Calculamos el efecto de diseño
+
+```{r}
+
+VAR_SY_1=var(Y_HT_SY_1)
+(deff_1=VAR_SY_1/VAR_SI)
+```
+
+
+## Caso 3
+
+Finalmente ordenamos el marco por la propia variable  de interés $y$ 
+
+
+```{r}
+R=1000
+U = U %>% arrange(empleados)
+Y_HT_SY_2=as.numeric()
+```
+
+```{r}
+set.seed(12)
+for ( i in 1:R) {
+incluidas=UPsystematic(U$pi)
+Y_HT_SY_2[i]=U %>% filter(incluidas==1)  %>% summarise(sum(empleados/pi)) %>% pull()  
+}
+
+```
+
+Calculamos el efecto de diseño
+```{r}
+VAR_SY_2=var(Y_HT_SY_2)
+(deff_2=VAR_SY_2/VAR_SI)
+```
+

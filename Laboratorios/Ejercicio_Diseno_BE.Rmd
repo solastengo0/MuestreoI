@@ -1,0 +1,69 @@
+---
+title: "Ejercicio Diseño Bernoulli"
+author: "Muestreo y Planificación de Encuestas"
+date: "2023-03-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(haven)
+library(purrr)
+```
+
+### Cargar los datos
+
+La base con la que se va a trabajar son los datos del Censo 2011 para la localidad de Bella Unión. El archivo tiene extensión `.sav` (SPSS), que puede ser leído con la librería **haven**.
+
+```{r}
+bu <- read_spss("bella_union.sav")
+```
+
+### Selección de muestra con diseño Bernoulli
+
+Generamos un número aleatorio $\varepsilon_k$ para cada fila del objeto `bu`:
+
+```{r}
+bu <- bu %>%
+  mutate(epsilon = runif(n()))
+```
+
+Fijamos $\pi = 0.1$. Los elementos elegidos son aquellos para los que $\varepsilon_k< \pi$. Creamos la variable `s` que vale 1 si el elemento fue seleccionado.
+
+```{r}
+pi <- 0.1
+
+bu <- bu %>%
+  mutate(s = if_else(epsilon < pi, 1, 0))
+```
+
+Filtramos los elementos seleccionados:
+
+```{r}
+m <- bu %>%
+  filter(s == 1)
+```
+
+El tamaño de la muestra obtenida es:
+
+```{r}
+bu %>%
+  summarise(sample_size = sum(s))
+```
+
+### Simulación de la distribución empírica del tamaño muestral
+
+```{r}
+R <- 1000
+
+ns <- map_dbl(1:R, ~{
+  epsilon <- runif(nrow(bu))
+  sum(epsilon < pi)
+})
+
+hist(ns, main = "Distribución empírica de ns en un diseño BE", breaks = 40)
+```
+
+Este histograma representa la variabilidad en el tamaño muestral esperada bajo un diseño Bernoulli.

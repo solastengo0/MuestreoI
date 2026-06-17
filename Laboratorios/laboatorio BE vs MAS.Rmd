@@ -1,0 +1,226 @@
+---
+title: "Laboratorio II"
+author: "Muestreo y Planificación de Encuestas"
+date: '2025'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,warning = FALSE)
+```
+
+### Paquetes
+
+Carga los paquetes.
+
+```{r}
+library(tidyverse)
+library(survey)
+library(srvyr)
+```
+
+### Importa universo de interés $U$
+
+```{r}
+U = readxl::read_xlsx('frame empresas.xlsx')
+```
+
+Creamos una variable dicotomica $x$ que toma el valor 1 si la empresa tiene más de 100 empleados y cero en otro caso
+
+```{r}
+U = U %>% mutate(x=ifelse(empleados>=100,1,0))
+```
+
+Vemos los conteos y proporción en la población
+
+```{r}
+U %>% count(x) %>% mutate(p=n/sum(n)) 
+```
+
+```{r}
+
+```
+
+### Parámetros de interés
+
+Los parámetros de interés $\theta$ son:
+
+-   Total de empleados $t_y=\sum\nolimits_{U} y_k=$ `r  U %>%  pull(empleados) %>% sum(.)`
+-   Promedio de empleados $\bar Y_U=t_y/N=$ `r  U %>%  pull(empleados) %>% mean(.)`
+-   Tamaño de la población $N=$ `r  U %>%  nrow()`
+-   Proporción de empreas grandes ($p$)
+
+### Diseño Bernoulli
+
+Vamos a seleccionar una muestra bajo un diseño $p(s)$ Bernoulli (BE) con $\pi=0.10$.
+
+- El tamaño de muestra (aleatorio) se distribuye $n_s \sim Bin(N,\pi)$
+- El tamaño de muestra esperado es: $E(n_s)=N\pi=$ `r round(0.15*nrow(U))` 
+- La varianza del tamaño de muestra es: $V(n_s)=N\pi(1-\pi)=$ `r round(0.10*nrow(U)*(0.90))`
+
+#### Simulación del tamaño de muestra esperado
+
+```{r}
+pi=0.10
+sim = tibble(n_s=rbinom(10000,size=nrow(U),prob=pi)) 
+sim %>% ggplot()+geom_histogram(aes(x=n_s), bins=round(nrow(sim)), colour='blue', fill='skyblue')+
+  theme_bw()
+```
+
+
+#### Selección de la muestra
+
+```{r}
+s = U %>% mutate(RN=runif(nrow(U),0,1)) %>% filter(RN<=pi) %>% mutate(pi,
+                                                                      w=1/pi)
+head(s)
+```
+
+#### Estimaciones puntuales
+
+Se realizan las estimaciones puntuales para los parámetros de interés
+
+Estimación puntual del total de empleados:
+
+```{r}
+sum(s$empleados*s$w)
+```
+Estimación del tamaño de la población
+
+```{r}
+sum(s$w)
+```
+Estimación del promedio de empleados
+```{r}
+N=nrow(U)
+sum(s$w*s$empleados)/N
+```
+
+Estimación de la proporción de  empresas grandes
+
+```{r}
+sum(s$w*s$x)/N
+```
+
+
+### Estimación de los desvíos estándar de los estimadores
+
+$$\hat V (\hat t_{\pi})=\pi^{-1}(\pi^{-1}-1)\sum\limits_{s}y_i^2 \Rightarrow \widehat{SE} (\hat t_{\pi})=\sqrt{\hat V (\hat t_{\pi})}$$
+SE del estimador del total de empleados
+
+```{r}
+(1/pi)*(1/pi-1)*sum(s$empleados**2) %>% sqrt()
+```
+
+SE del estimador del tamaño de la población
+
+```{r}
+(1/pi)*(1/pi-1)*nrow(s) %>% sqrt()
+```
+
+
+SE del estimador del promedio de empleados
+
+```{r}
+(1/pi)*(1/pi-1)*sum(s$empleados**2) %>% sqrt()/N 
+```
+
+
+SE del estimador de la proporción de empresas grandes
+
+```{r}
+(1/pi)*(1/pi-1)*sum(s$x**2) %>% sqrt()/N 
+```
+
+### Estimación del efecto de diseño
+
+Estimamos el efecto de diseño para la estimación del total de empleados
+
+$$\widehat{\text{deff}} = \frac{\hat V_{BE}(\hat t_{\pi})}{\hat V_{SI}(\hat t_{\pi})}$$
+
+
+```{r}
+V_EST_BE= (1/pi)*(1/pi-1)*sum(s$empleados**2)
+n_esp=N*pi
+V_EST_SI= N^2*(1-n_esp/N)*var(s$empleados)/n_esp
+(deff=V_EST_BE/V_EST_SI)
+```
+
+### Efecto de diseño 
+
+```{r}
+V_BE=(1/pi-1)*sum(U$empleados**2)
+n_esp=N*pi
+V_SI= N^2*(1-n_esp/N)*var(U$empleados)/n_esp
+(deff=V_BE/V_SI)
+```
+
+
+Corroboramos la aproximación
+
+$$\text{deff}\approx 1+ \frac{1}{(cv(y))^2}$$
+```{r}
+1 + 1/((sd(U$empleados)/mean(U$empleados))^2)
+```
+
+
+### Distribución empírica del estimador 
+
+Calculamos las distribución empirira del estimador $\hat t_{\pi}$ bajo los diseños SI y BE
+
+```{r}
+R=2000
+Y_HT_SI=as.numeric()
+Y_HT_BE=as.numeric()
+for (i in 1:R)
+  {
+Y_HT_SI[i]=U %>% slice(sample(1:N,n_esp,replace=FALSE)) %>%
+                  pull(empleados) %>% mean(.)*N
+Y_HT_BE[i]=U %>% mutate(RN=runif(nrow(U),0,1)) %>% filter(RN<=pi) %>%
+                  pull(empleados) %>% sum(.)/pi
+}
+```
+Juntamos las estimaciones en un mismo dataset
+
+```{r}
+sim = bind_rows(tibble(PS='SI', Y_EST=Y_HT_SI),
+                tibble(PS='BE', Y_EST=Y_HT_BE))
+```
+
+```{r}
+sim %>% ggplot()+geom_density(aes(x=Y_EST, fill=PS), alpha=0.3)+theme_bw()
+```
+
+Efecto de diseño empírico
+```{r}
+var(Y_HT_BE)/var(Y_HT_SI)
+```
+
+
+### Estimador alternativo
+
+$$\hat t_{\text{alt}}=\frac{N}{n_s}\sum\limits_{i \in s}y_i$$
+Una aproximación de la varianza viene dada como:
+$$\hat V (\hat t_{\text{alt}})=N^2(1-n_s/N)S^2_{y_s}/n_s $$
+
+Lo comparamos respecto al SI de forma empírica
+
+```{r}
+R=2000
+Y_HT_SI=as.numeric()
+Y_ALT=as.numeric()
+for (i in 1:R)
+  {
+Y_HT_SI[i]=U %>% slice(sample(1:N,n_esp,replace=FALSE)) %>%
+                  pull(empleados) %>% mean(.)*N
+Y_ALT[i]=U %>% mutate(RN=runif(nrow(U),0,1)) %>% filter(RN<=pi) %>%
+                  pull(empleados) %>% mean(.)*N
+}
+```
+
+
+Efecto de diseño empírico
+```{r}
+var(Y_ALT)/var(Y_HT_SI)
+```
+

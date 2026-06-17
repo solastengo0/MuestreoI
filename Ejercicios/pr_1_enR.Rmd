@@ -218,16 +218,11 @@ f_distR
 ggplot(f_distR, aes(x=estYR,y=f_YR)) + geom_col() + geom_vline(xintercept = Y, color="red") + theme_bw()
 ```
 
-
 ## Comparación de las varianzas
 
-Ahora compararemos las varianzas de la distribución en el
-muestreo.
+Ahora compararemos las varianzas de la distribución en el muestreo.
 
 Para el muestreo aleatorio simple sin reposición tenemos:
-
-
-
 
 ```{r}
 V_sr=var(estY)
@@ -329,6 +324,3 @@ $$
 IC= c(Y_HT-qnorm(0.975)*est_se_Y,Y_HT+qnorm(0.975)*est_se_Y)
 IC
 ```
-
-
-

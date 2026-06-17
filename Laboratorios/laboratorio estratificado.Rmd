@@ -1,0 +1,202 @@
+---
+title: "Diseños estratificados - Parte I"
+author: "Muestreo I"
+date: '2024-04-24'
+output: html_document
+---
+
+### diseño estratificado
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(sampling)
+library(srvyr)
+library(readxl)
+```
+
+Cargar universo de estudio $U$
+```{r}
+U = readxl::read_xlsx('frame empresas.xlsx')
+U
+```
+
+La variable de interés $y$ es la remuneraciones de las empresas y el parámetro de interés es el total de remunueracione $Y=\sum\limits_{i\in U}y_i$
+
+```{r}
+# computamos totales de las variables y N
+pop_total = U %>% summarise(tot_rem=sum(rem),
+                 tot_empleados=sum(empleados),
+                 N=n())
+pop_total
+```
+
+
+```{r}
+# visualizamos relación entre empleados vs rem
+
+U %>% ggplot()+geom_point(aes(x=empleados,y=rem))+theme_bw()
+
+
+```
+
+```{r}
+#correlación
+U %>% summarise(R=cor(rem,empleados))
+
+```
+
+```{r}
+U %>% ggplot()+geom_point(aes(x=empleados,y=rem))+theme_bw()+
+  geom_smooth(aes(x=empleados,y=rem),method='lm')
+
+```
+
+
+### Estratificación
+
+Se relizan $H=5$ estratos utilizando la variable número de empleados. Por ahora, elegimos los límites de fomrma arbitraria 
+
+
+```{r}
+#EDA
+
+U %>% summarise(min(empleados),
+                    mean(empleados),
+                    median(empleados),
+                    max(empleados))
+```
+Los límites de los estratos son
+
+
+- 1. 20 a 49
+- 2. 50 a 99
+- 3. 100 a 199
+- 4. 200 a 499
+- 5. 500 o+
+
+```{r}
+U = U %>% mutate(strata=cut(empleados,
+                            breaks = c(20,50,100,200,500,Inf),
+                            right=FALSE))
+
+```
+
+```{r}
+# visulizamos  los estratos
+
+U %>% ggplot()+geom_boxplot(aes(x=strata,y=rem))+theme_bw()
+```
+
+
+
+```{r}
+
+# transformamos la variable....(no se ve mucho)
+
+U %>% ggplot()+geom_boxplot(aes(x=strata,y=sqrt(rem)))+theme_bw()
+
+```
+
+```{r}
+# calculamos medidas de resumen segmentadas por estrato
+tam = U %>% group_by(strata) %>% summarise(N=n(),
+                                               tot_emp=sum(empleados),
+                                               prom_emp=mean(empleados),
+                                               sd_emp=sd(empleados),
+                                               tot_rem=sum(rem),
+                                               prom_rem=mean(rem),
+                                               sd_rem=sd(rem))
+tam
+```
+
+
+### Selección de la muestra
+
+Seleccionamos una muestra bajo un muestreo estratificado simple de tamaño $n=100$ y probamos distintas asignaciones (proporcional y óptima).
+
+
+```{r}
+
+# asignamos propocional y optima (x=empleados)
+n=100
+tam = tam %>% mutate(n_prop=round(n*N/sum(N)),
+                     n_opt=round(n*N*sd_emp/sum(N*sd_emp)))
+tam
+```
+
+
+```{r}
+# comparamos las varianzas teoricas....
+
+(var_tot_prop = tam %>% summarise(sum(N**2*(1-n_prop/N)*sd_rem**2/n_prop)))
+(var_tot_opt = tam %>% summarise(sum(N**2*(1-n_opt/N)*sd_rem**2/n_opt)))
+
+```
+
+
+Selecciona muestra utilizando el $n_h$ de la  asignación óptima y muestreo aleatorio simple dentro de cada estrato
+
+
+```{r}
+# debemos ordenar el marco por estrato
+set.seed(1234)
+U= U %>% arrange(U)
+sample = sampling::strata(U,
+                          stratanames = c('strata'),
+                          size = tam$n_opt,
+                          method='srswor',
+                          description = TRUE)
+```
+
+
+```{r}
+sample = sampling::getdata(U,sample)
+
+sample=as_tibble(sample)
+```
+
+
+```{r}
+#calculamos ponderadoes base (w)
+
+sample = sample %>% mutate(w=1/Prob)
+
+```
+
+
+```{r}
+# computamos estimaciones puntuales, SEs, ICs y CVs para U y otros dominios
+
+design = sample %>% as_survey_design(id=0,
+                                     weights=w,
+                                     fpc=Prob,
+                                     strata=strata)
+```
+
+
+
+computamos estimación del total de rem junto con metricas de la calidad
+
+```{r}
+design %>% summarise(survey_total(rem, vartype = c('cv','ci'), deff=TRUE))
+```
+
+
+
+```{r}
+# idem pero segmentado por estrato
+design %>% group_by(strata) %>%  summarise(survey_total(rem, vartype = c('cv','ci'), deff=TRUE))
+```
+
+
+```{r}
+# idem pero sin tener en cuenta las empresas de mas de 30 empleados y por actividad
+design %>% group_by(actividad) %>%  filter(empleados>=30) %>% summarise(survey_total(rem, vartype = c('cv','ci'), deff=TRUE))
+
+```
+
+
+Realizar un sistemático  ordenando por cantidad de empleados,  no sería una mejor estrategía?...
+
+
+
