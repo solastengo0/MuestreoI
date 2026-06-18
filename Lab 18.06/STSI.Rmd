@@ -1,0 +1,201 @@
+---
+title: "Ejercicio Diseño STSI"
+author: "Muestreo y Planificación de Encuestas"
+date: "2023-04-26"
+output: html_document
+---
+  
+  
+En este ejemplo seleccionaremos una muestra de hogares de Bella Unión con un diseño STSI, con el fin de estimar la cantidad de desocupados, utilizando como estrato al segmento censal. 
+
+Cargamos las librerías:
+```{r setup, message=FALSE, warning=FALSE}
+library(sampling)
+library(survey)
+library(haven)
+library(tidyverse)
+library(sf)
+library(tmap)
+```
+
+Leemos los datos censales de Bella Unión.
+
+```{r}
+bu <- read_spss("bella_union.sav")
+```
+
+Creamos la variable de interés:
+
+```{r}
+bu$desocupado <- ifelse(
+  bu$pobpcoac == 3 | bu$pobpcoac == 4,
+  1,
+  0
+)
+```
+
+Visualizamos a los segmentos como estratos geográficos, para ello debemos leer el archivo shp con la función st_read() de la librería sf y luego visualizarlo con tmap:
+
+```{r}
+bu.map <- st_read("zonas_bu.shp")
+
+bu.map$SEGMENTO <- as.character(bu.map$SEGMENTO)
+```
+
+```{r}
+tmap_mode("view")
+
+tm_shape(bu.map) +
+  tm_polygons(
+    "SEGMENTO",
+    alpha = 0.3,
+    id = "SEGMENTO"
+  ) +
+  tm_layout(legend.outside = TRUE) +
+  tm_basemap("OpenStreetMap")
+```
+
+Definimos el tamaño de muestra y creamos un objeto que agregue por estrato la cantidad de hogares total y el desvío estándar de la variable de interés.
+
+```{r}
+n <- 200
+
+tam <- bu %>%
+  group_by(SEGM) %>%
+  summarise(
+    Nh = n(),
+    sh = sd(desocupado)
+  )
+
+tam
+```
+
+Observamos que hay un segmento con una sola persona. Para el fin de este ejercicio no contaremos con ese segmento, ya que puede perjudicar la asignación entre estratos. Volvemos a crear el objeto anterior, descartando a este segmento y lo descartamos del marco.
+
+```{r}
+tam <- bu %>%
+  filter(!SEGM %in% "008") %>%
+  group_by(SEGM) %>%
+  summarise(
+    Nh = n(),
+    sh = sd(desocupado)
+  )
+
+tam
+```
+
+```{r}
+bu <- bu %>%
+  filter(!SEGM %in% "008")
+```
+
+Creamos una columna con la asignación proporcional de la muestra y otra con la asignación óptima asumiendo costos constantes. Recordar que la muestra siempre se redondea hacia arriba (por eso la función ceiling()), y que tenemos un estrato con una sola observación, el que tendrá que ser censado.a
+
+```{r}
+tam <- tam %>%
+  mutate(
+    n1 = ceiling(n * Nh / sum(Nh)),
+    n2 = ceiling(n * Nh * sh / sum(Nh * sh, na.rm = TRUE))
+  )
+
+tam
+```
+
+En vistas de que usaremos la librería survey para obtener las estimaciones, conviene agregar las variables creadas en el objeto tam al marco de muestreo.
+
+```{r}
+bu <- left_join(bu, tam, by = "SEGM")
+```
+
+Seleccionamos una muestra estratificada con la función strata() de la librería sampling. La base tiene que estar ordenada por el estrato.
+
+```{r}
+bu <- bu %>%
+  arrange(SEGM)
+```
+
+Selecciono la muestra con la asignación proporcional. Indico el nombre del estrato (stratanames) y el tamaño en un vector. El método por defecto es el STSI.
+
+```{r}
+set.seed(12345)
+
+s1 <- sampling::strata(
+  bu,
+  stratanames = "SEGM",
+  size = tam$n1
+)
+
+m1 <- getdata(bu, s1)
+```
+
+Selecciono la muestra con la asignación óptima. En este caso especifico el method para eliminar el warning.
+
+```{r}
+set.seed(12345)
+
+s2 <- sampling::strata(
+  bu,
+  stratanames = "SEGM",
+  size = tam$n2,
+  method = "srswor"
+)
+
+m2 <- getdata(bu, s2)
+```
+
+Ahora vamos a procesar con la librería survey. Primero la muestra obtenida bajo asignación proporcional.
+
+
+```{r}
+p.s1 <- svydesign(
+  ids = ~1,
+  strata = ~SEGM,
+  data = m1,
+  fpc = ~Nh
+)
+
+summary(p.s1)
+```
+
+Realizamos un summary() a los pesos muestrales, y le calculamos es desvío.
+
+```{r}
+summary(weights(p.s1))
+sd(weights(p.s1))
+```
+
+Calculamos el total de desocupados con su deff:
+
+```{r}
+svytotal(~desocupado, p.s1, deff = TRUE)
+```
+
+Repetimos el ejercicio para la muestra obtenida bajo asignación óptima.
+
+```{r}
+p.s2 <- svydesign(
+  ids = ~1,
+  strata = ~SEGM,
+  data = m2,
+  fpc = ~Nh
+)
+
+summary(p.s2)
+```
+
+Realizamos un summary() a los pesos muestrales, y le calculamos es desvío.
+
+```{r}
+summary(weights(p.s2))
+sd(weights(p.s2))
+```
+
+Calculamos el total de desocupados con su deff:
+
+```{r}
+svytotal(~desocupado, p.s2, deff = TRUE)
+```
+
+# Ejercicio
+
+Verificar si la librería `survey` está utilizando la fórmula de la varianza del diseño STSI para calcular la varianza de la estimación.

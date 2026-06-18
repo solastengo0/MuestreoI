@@ -1,0 +1,260 @@
+---
+title: "Muestreo por conglomerado y en dos etapas"
+author: "Muestreo y Planificación de Encuestas"
+output: html_document
+date: "2026-06-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+En este ejemplo seleccionaremos una muestra de hogares de Bella Unión con un diseño por conglomerados y luego en dos etapas. Estimaremos la cantidad de desocupados utilizando como conglomerados a los segmentos censales. 
+
+Cargamos las librerías:
+
+```{r,message=FALSE, warning=FALSE}
+library(sampling)
+library(survey)
+library(haven)
+library(tidyverse)
+```
+
+Leemos los datos censales de Bella Unión. 
+```{r}
+bu=read_spss("bella_union.sav")
+```
+
+Eliminamos el segmento 008 por tener un solo individuo. Esto puede afectar luego la selección de los clusters. 
+
+```{r}
+bu=bu %>% filter(!SEGM%in%"008")
+```
+
+La variable de interés es la cantidad de desocupados.
+
+```{r}
+bu$desocupado=ifelse(bu$pobpcoac==3|bu$pobpcoac==4,1,0)
+```
+
+El código compuesto del segmento es la concatenación de departamento, sección y segmento. Creamos la variable **codsegm**
+
+```{r}
+bu$codsegm=paste(bu$DPTO,bu$SECC,bu$SEGM)
+```
+
+Eliminamos los caracteres en blanco que tiene.
+
+```{r}
+bu$codsegm=gsub(" ", "", bu$codsegm, fixed = TRUE)
+```
+
+
+# Diseño por conglomerados SIC
+
+Nos fijamos cuantos segmentos quedaron.
+
+```{r}
+NI=length(table(bu$codsegm))
+NI
+```
+
+Vamos a seleccionar cuatro.
+
+```{r}
+nI=4
+```
+
+
+Para poder usar la librería **survey** es necesario crear la variable **fpc**, que en este caso sera con el valor $N_I$.
+Para ir adelantando trabajo, calcularemos los $N_i$ del diseño en dos etapas. Lo hacemos contando cuantas viviendas hay en cada $U_i$ y agregándolo a **bu**.
+
+```{r}
+bu$fpc=NI
+
+tam=bu %>% group_by(codsegm) %>% summarise(Ni=n_distinct(ID_VIVIENDA)) # se le agrega n_distinct para contar solo una vez por vivienda (pueden haber mas de una fila x vivienda, xq hay mas de una persona viviendo ahí)
+bu=bu %>% left_join(tam,"codsegm")
+```
+
+
+Para el diseño por conglomerados empezaremos obteniendo la muestra realizando un SIC. Usamos la funcion **cluster()** de la libreria **sampling**. Una vez obtenida la muestra nos fijamos su tamaño.
+
+```{r}
+set.seed(87965)
+cl1=sampling::cluster(bu,clustername="codsegm",size=nI,method="srswor")
+mc1=getdata(bu,cl1)
+
+nrow(mc1)
+```
+
+
+Ahora estimamos el total de la variable de interés con la librería **survey**.
+
+```{r}
+pc1<-svydesign(ids=~codsegm,data=mc1,fpc=~fpc)
+```
+
+Por temas de espacio no mostramos el resultado pero pueden correr **summary(pc1)**. Podemos ver ahí que que el **id** ya no es  ~1, si no que es el nombre del conglomerado.
+
+Al ser un diseño SIC no es necesario especificar las probabilidades de inclusión ni los weigths. A continuación calculamos la estimación de desocupados.
+
+```{r}
+svytotal(~desocupado,pc1,deff=TRUE)
+```
+
+Corroboremos si la librería **survey** utiliza la formula de la varianza del SIC. Para ello debemos calcular la varianza
+de los totales de los clusters en la muestra. Si da igual es que la librería estima la varianza sin realizar aproximaciones.
+
+```{r}
+tot_mc_1=mc1 %>% group_by(codsegm) %>% summarise(tot=sum(desocupado))
+
+v_sic_est=NI^2*(1-nI/NI)*var(tot_mc_1$tot)/nI
+sqrt(v_sic_est)
+
+```
+
+# Muestreo por conglomerados con selección pips
+
+
+Usaremos como variable auxiliar al tamaño de los clusters. Para poder calcular los $\pi_{I_i}$ necesito calcular el tamaño de los 10 clusters.
+
+```{r}
+Ni=bu %>% group_by(codsegm) %>% summarise(Ni=n())
+
+piI=inclusionprobabilities(Ni$Ni,nI)
+piI
+```
+
+
+Obtenemos la muestra usando un pips sistemático.
+
+```{r}
+cl2=sampling::cluster(bu,clustername="codsegm",size=nI,pik=piI,method="systematic")
+mc2=getdata(bu,cl2)
+
+nrow(mc2)
+
+```
+
+
+Para la estimación usamos la libreria **survey**. Primero definimos el diseño, luego vemos el **summary(pc2)** (correrlo en R) y por ultimo realizamos la estimación.
+ 
+```{r}
+pc2<-svydesign(ids=~codsegm,probs=~Prob,data=mc2,fpc=~fpc)
+svytotal(~desocupado,pc2,deff=TRUE)
+```
+
+Para este caso especificamos las probabilidades con el **Prob** que sale de **getdata** al definir **mc2**. Hay que usar ese y no un vector con las 10 probabilidades.
+
+Notar que obtenemos un deff más chico que en el caso anterior.
+
+Veamos ahora como estimó la varianza.
+Para compararla la calculamos con la ecuación 4.6.2 del libro.
+
+```{r}
+tot_mc_2=mc2 %>% group_by(codsegm) %>% summarise(tot=sum(desocupado),p=mean(Prob)/nI)
+tot_mc_2$t_exp=tot_mc_2$tot/tot_mc_2$p
+
+v_pips_est=(1-nI/NI)*sum((tot_mc_2$t_exp-svytotal(~desocupado,pc2,deff=TRUE)[1])^2)/(nI*(nI-1))
+sqrt(v_pips_est)
+```
+
+Verificamos entonces que estima la varianza asumiendo un diseño con remplazo, luego lo corrige por el factor de corrección de poblaciones finitas.
+
+# Diseño en dos etapas
+
+Primero haremos un diseño SISI. De los 4 segmentos seleccionados, seleccionamos 100 viviendas y en cada una de ellas relevamos todas las personas. 
+Para realizar la selección de la muestra utilizamos la función **mstage()** de la librería **sampling**. Hay que ordenar la base por los clusters.
+
+```{r}
+set.seed(4565)
+bu=bu[order(bu$codsegm,bu$ID_VIVIENDA),]
+
+dosEt_1=mstage(bu,stage = c("cluster","cluster"),varnames=c("codsegm","ID_VIVIENDA"),
+               size = list(4,rep(100,4)),method = c("srswor","srswor"))
+```
+
+El objeto **dosEt_1** es un lista con dos componentes donde el primero contiene los clusters y el segundo elemento contiene a las viviendas seleccionadas.
+
+Verifico cuáles fueron seleccionados y con que probabilidades.
+
+```{r}
+table(dosEt_1[[1]]$codsegm)
+table(dosEt_1[[1]]$`Prob_ 1 _stage`)
+```
+
+Aplicamos **getdata()** al segundo elemento de la lista.
+
+```{r}
+m3=getdata(bu,dosEt_1[[2]])
+```
+
+Vamos a verificar que las probabilidades de inclusión estén bien. Recordar que deberían ser $0.4\cdot100/N_i$ y deben coincidir con las de la muestra.
+
+```{r}
+tam$Prob=(nI/NI)*100/tam$Ni
+aux=m3 %>% group_by(codsegm) %>% summarise(mean(Prob))
+aux
+tam
+```
+
+
+
+Ahora estimamos con la librería **survey**, tengo que agregar **ID_VIVIENDA** en el **ids** y en el **fps** agregar el $N_i$.
+Luego de esto corremos **summary(p3)** para ver que quedo.
+
+
+```{r}
+p3<-svydesign(ids=~codsegm+ID_VIVIENDA,probs=~Prob,data=m3,fpc=~fpc+Ni)
+```
+
+Estimamos el total de desocupados.
+
+```{r}
+svytotal(~desocupado,p3,deff=TRUE)
+```
+
+Notamos como el deff baja bastante en comparación al SIC, la variabilidad en el tamaño de la vivienda puede estar molestando. Tener en cuenta que en el SIC censábamos las viviendas dentro de los 4 clusters y en este caso nos quedamos con 400 viviendas en total. Es un tamaño de muestra muchísimo menor. 
+
+
+Calculamos la varianza para comparar con lo obtenido.
+
+```{r}
+tot_mc_3=m3 %>% group_by(codsegm) %>% summarise(tot=sum(desocupado),p=mean(Prob)/nI)
+tot_mc_3$t_exp=tot_mc_3$tot/tot_mc_3$p
+
+v_sisi_est=sum((tot_mc_3$t_exp-svytotal(~desocupado,p3)[1])^2)/(nI*(nI-1))
+sqrt(v_sisi_est)
+```
+
+
+Verificamos entonces que estima la varianza asumiendo un diseño con remplazo, ya casi que ignora el **fpc**, algo hace porque si se saca el **fpc** da exactamente el resultado, pero la diferencia es tan pequeña que no vale la pena. 
+
+# Diseño en dos etapas con pips
+
+Para el diseño en dos etapas con pips debemos modificar el método en la primera etapa (*systematic*), y agregar el vector de probabilidades como argumento. Este vector debe ser una lista. Alcanza con llamar a la variable auxiliar para la primera etapa (la medida de tamaño, en este caso el tamaño del segmento), y si en la segunda etapa sigue siendo un diseño SI, se debe incorporar en la lista *NULL*. De esta forma entiende que en la primera etapa hace un diseño pips sistemático y en la segunda un simple.
+
+```{r}
+dosEt_2<-mstage(bu, stage=c("cluster","cluster"), varnames=c("codsegm","ID_VIVIENDA"), size = list(4,rep(100,4)), 
+method=c("systematic","srswor"), pik=list(Ni$Ni,NULL))
+```
+
+Procedemos como en el caso SISI para obtener la muestra y las probabilidades de inclusión:
+
+```{r}
+# obtengo la muestra final
+m4=getdata(bu,dosEt_2[[2]])
+# armo el diseño
+p4<-svydesign(ids=~codsegm+ID_VIVIENDA,probs=~Prob,data=m4,fpc=~fpc+Ni)
+```
+Obtenemos la muestra de viviendas y nuevamente corremos **summary(p4)** para ver lo obtenido. 
+```{r,eval=FALSE}
+summary(p4)
+```
+Ya tenemos todo para estimar el total de desocupados.
+
+```{r}
+svytotal(~desocupado,p4,deff=TRUE)
+```
+
+Ejercicio: Comparar las varianzas en este caso. 
