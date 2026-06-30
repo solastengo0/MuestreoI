@@ -1,0 +1,134 @@
+---
+title: "Proyecto de Muestreo y Planificación de las Encuestas 1"
+author: "Valentina Rodríguez Blanco, Macarena Perdomo, Sol Astengo"
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    fig-width: 7
+    fig-height: 4.5
+    fig-align: center
+execute:
+  echo: false
+  warning: false
+  message: false
+df-print: kable
+---
+
+```{r}
+source("ScriptProyecto.R")
+```
+
+La unidad de análisis utilizada fue el hogar, ya que la variable de interés HOGCE13 mide la cantidad de automóviles o camionetas del hogar. Por lo tanto, la base original fue trabajada a nivel de hogares, identificados mediante ID_HOGAR.
+
+Se redujo y limpió la base, los siguientes codigos se transformaron en NA: 
+
+- 7777 = No corresponde
+- 8888 = No relevado
+- 9898 = Ignorado
+- 99 / 9999 = No recuerda
+
+# Total Poblacional
+
+```{r}
+total
+```
+El total poblacional de automóviles/camionetas en hogares de Rivera es 14097.
+
+# Diseños Muestrales y Totales Estimados
+
+En esta sección se comparan distintos diseños muestrales para estimar el total poblacional de automóviles/camionetas en hogares de Rivera. Para cada diseño se simularon 1000 muestras de tamaño aproximado (n = 1500) y se calculó el estimador del total poblacional. La comparación se realiza a partir de la distribución empírica de los estimadores obtenidos en las simulaciones.
+
+Los diseños considerados fueron: muestreo simple sin reemplazo, muestreo simple con reemplazo, muestreo estratificado y muestreo por conglomerados.
+
+**SI**: Se seleccionan hogares directamente, sin repetir unidades.
+
+**SIR**: Las unidades pueden ser seleccionadas más de una vez, por lo que se trabaja con la muestra inducida.
+
+**STSI**: La población se divide en grupos y se selecciona una muestra dentro de cada uno, los estratos son elegidos por la variable con mayor correlación con la variable de objeto.
+```{r}
+correlaciones
+```
+La variable elegida es HOGHD00 que correponde a la cantidad de habitaciones del hogar, se entiende razonable que un hogar con mayor cantidad de habitaciones se relaciona a un mejor poder adquisitivo, al igual que la cantidad de vehiculos que se posee.
+ 
+**Conglomerados**: Se seleccionan los conglomerados a partir de una nueva variable (codsegm) que concatena la SECCION y el SEGMENTO de los hogares, con el fin de definirlos por zona geográfica. 
+Se decidió crear esta nueva variable ya que existen hogares que se encuentran en diferentes secciones y están identificados con el mismo número en la variable SEGMENTO. De esta forma cada hogar se encuentra en un único conglomerado.
+
+En la siguiente tabla se observan distintos estimadores de resumen empiricos y los deff de cada diseño.
+```{r}
+comparacion
+```
+En conclusión, el diseño estratificado fue el más eficiente para estimar el total, ya que logró la menor varianza empírica y un $deff$ menor a 1. En cambio, el diseño por conglomerados presentó una dispersión mucho mayor, por lo que fue el menos preciso entre los diseños comparados.
+
+```{r}
+g_todos
+```
+
+Los resultados de la simulación muestran que los cuatro estimadores presentan  un sesgo empírico muy reducido respecto al verdadero total poblacional. La comparación de las varianzas empíricas y de los errores cuadráticos medios permitió identificar al diseño estratificado como el más eficiente en términos de variabilidad entre los considerados, teniendo además el único efecto diseño menor a 1 del 0.924.
+
+El diseño SIR presentó un comportamiento muy similar al del diseño SI. Tanto la varianza, como el error cuadrático medio, fueron levemente superiores a los obtenidos bajo diseño aleatorio simple, lo que indica que, para esta población y este tamaño muestral, el muestreo con reemplazo no aporta mejoras en términos de precisión.
+
+El diseño por conglomerados resultó ser el menos eficiente teniendo incluso una varianza cien veces mas grande que la de un diseño SI.
+ 
+# Intervalos de Confianza
+
+Usando las distribuciones empiricas muestrales obtenidas en el punto anterior, se definen intervalos de confianza al 95% para cada diseño de dos formas distintas: 
+
+- Intervalos empíricos (cuantiles) : 
+Para el vector de totales obtenidos se calculan los cuantiles 0,025 y 0,975 para obtener los extremos de los intervalos al 95% de confianza.
+
+- Intervalos asumiendo normalidad :
+Asumiendo normalidad en las distribuciones empiricas de los vectores de totales de cada diseño, se definen intervalos de confianza al 95%.
+
+En la siguiente tabla se muestran los resultados de los intervalos y el rango de cada uno:
+
+```{r}
+tabla_ic
+```
+Los intervalos de SI, SIR y estratificado son relativamente similares y se concentran alrededor del total poblacional. El diseño estratificado presenta la menor longitud de intervalo, por lo que resulta el más preciso, aunque la diferencia con SI es pequeña. 
+
+En cambio, el diseño por conglomerados tiene intervalos mucho más amplios, lo que evidencia una alta variabilidad del estimador y una menor precisión.
+Por esto se calculó el coeficiente de homogeneidad intraclase, resultando en lo siguiente:
+```{r}
+delta
+SST
+SSW
+```
+Segun el delta positivo que tiende a 0, y la similitud entre SST y SSW, se concluye que hay muy poca homogeneidad intra cluster, que es lo ideal en un diseño eficiente por conglomerado, por lo tanto la alta variabilidad del diseño no se explica por falta de heterogeneidad dentro de los conglomerados.
+
+# Estimador Alternativo del Diseño por Conglomerados.
+
+Dado que el diseño por conglomerados parece ser por mucha diferencia el menos eficiente para estimar el total poblacional se define un nuevo estimador alternativo el cual estima primero una media: la cantidad promedio de automóviles/camionetas por hogar dentro de los conglomerados seleccionados. Luego, esa media estimada se multiplica por el total conocido de hogares de la población.
+
+En términos generales, el estimador alternativo puede escribirse como:
+
+$$ \hat{t}_{alt} = N \hat{\bar{y}}_{eS} $$
+Esta forma se encuentra en el libro "Estrategias de Muestreo" del autor H. Andrés Gutiérrez Rojas.[Ver Anexo](estrategiasdemuestreogutierrez-230623001956-4e73bdb7.pdf)
+
+Se puede visualizar la distribución empírica del estimador alternativo mediante el siguiente gráfico.
+```{r}
+dist_cong_alt
+```
+Parece tener forma de campana con una cola derecha más pronunciada que en el lado izquierdo, es decir, para valores mayores a la media, el estimador varía más.
+
+Con el fin de comparar las medidas de resumen del estimador $\hat{t}_{\pi}$ por conglomerados y de $\hat{t}_{alt}$ se obtiene la siguiente tabla:
+
+```{r}
+comparacion_cong
+```
+
+Los resultados obtenidos con el estimador alternativo resultan mejores, aunque sus medias son cercanas, $\hat{t}_{alt}$ presenta una varianza empirica y desvío empirico menor. Aunque el sesgo empírico del estimador alternativo es levemente mayor en valor absoluto.
+
+A continuación se definen nuevos intervalos de confianza para $\hat{t}_{alt}$, y se comparan con los de $\hat{t}_{\pi}$.
+
+```{r}
+tabla_ic_cong
+```
+
+Los intervalos del estimador alternativo son mucho más cortos que los del estimador π por conglomerados. La longitud del intervalo empírico se reduce de 17.228,37 a 4.736,48, y bajo normalidad de 17.464,55 a 4.883,82.
+
+### Conclusión
+
+Con la simulación de la distribución del estimador alternativo se logró dismunuir la varianza (aunque aumentó levemente el sesgo) que también resultó en intervalos de confianza más precisos en comparación a la distribución del estimador horvitz thompson, además presenta menos diferencia entre los extremos de los intervalos empíricos y los calculados asumiendo normalidad.
+
+
