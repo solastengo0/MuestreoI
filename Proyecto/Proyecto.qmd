@@ -89,11 +89,21 @@ Los intervalos de SI, SIR y estratificado son relativamente similares y se conce
 
 En cambio, el diseño por conglomerados tiene intervalos mucho más amplios, lo que evidencia una alta variabilidad del estimador y una menor precisión.
 Por esto se calculó el coeficiente de homogeneidad intraclase, resultando en lo siguiente:
+
+$\delta$:
 ```{r}
 delta
+```
+$SST$:
+```{r}
 SST
+```
+
+$SSW$:
+```{r}
 SSW
 ```
+
 Segun el delta positivo que tiende a 0, y la similitud entre SST y SSW, se concluye que hay muy poca homogeneidad intra cluster, que es lo ideal en un diseño eficiente por conglomerado, por lo tanto la alta variabilidad del diseño no se explica por falta de heterogeneidad dentro de los conglomerados.
 
 # Estimador Alternativo del Diseño por Conglomerados.
